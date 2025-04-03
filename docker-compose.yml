@@ -3,7 +3,7 @@ services:
     build: .
     container_name: texas_schools_scraper
     volumes:
-      - ./data/output:/app/data/output
+      - ./data:/app/data
       - ./logs:/app/logs
       - ./config:/app/config
     env_file:
@@ -20,7 +20,7 @@ services:
     build: .
     container_name: arizona_schools_scraper
     volumes:
-      - ./data/output:/app/data/output
+      - ./data:/app/data
       - ./logs:/app/logs
       - ./config:/app/config
     env_file:

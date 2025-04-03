@@ -6,6 +6,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
+import csv
 
 from src.data_processors import PROCESSORS
 from src.scrapers import get_scraper
@@ -141,44 +142,44 @@ def main() -> int:
 
             # Initialize exporter
             exporter = PROCESSORS[output_format](scraper_type=scraper_type)
+            
+            # Set output directory from environment variable or arg, fall back to data/output
+            output_dir = os.getenv("OUTPUT_DIRECTORY") or args.output_dir or "data/output"
+            # Ensure the output directory exists
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Set output filename from environment variable or generate a timestamp-based one
+            output_filename = os.getenv("OUTPUT_FILENAME")
+            if not output_filename:
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                output_filename = f"{scraper_type}_{timestamp}.{output_format}"
+            elif not output_filename.lower().endswith(f".{output_format}"):
+                output_filename = f"{output_filename}.{output_format}"
+                
+            # Set the full output path
+            output_path = os.path.join(output_dir, output_filename)
+            
+            # Update exporter settings
+            exporter.output_dir = output_dir
+            exporter.output_filename = output_filename
 
-            # Set output path from environment variable
-            output_path = os.getenv("OUTPUT_PATH")
-            if output_path:
-                # Ensure directory exists
-                output_dir = os.path.dirname(output_path)
-                if output_dir:
-                    os.makedirs(output_dir, exist_ok=True)
-
-                # If no extension in output path, add it
-                if not output_path.lower().endswith(f".{output_format}"):
-                    output_path = f"{output_path}.{output_format}"
-
-                # Set output path in exporter
-                exporter.output_filename = os.path.basename(output_path)
-                exporter.output_dir = output_dir or "."
-
-                # Process data and export
+            # Process data and export
+            try:
                 export_path = exporter.process(data)
                 logger.info(f"Data exported to {export_path}")
-            else:
-                # Use default path handling in processor
+            except Exception as e:
+                logger.error(f"Error exporting data: {str(e)}")
+                # Fallback to direct file writing
                 try:
-                    export_path = exporter.process(data)
-                    logger.info(f"Data exported to {export_path}")
-                except Exception as e:
-                    logger.error(f"Error exporting data: {str(e)}")
-                    # Fallback to direct file writing
-                    fallback_path = f"/app/data/{scraper_type}_data.{output_format}"
-                    os.makedirs(os.path.dirname(fallback_path), exist_ok=True)
-                    if output_format == "csv":
-                        import csv
-
-                        with open(fallback_path, "w", newline="") as f:
-                            writer = csv.DictWriter(f, fieldnames=data[0].keys())
-                            writer.writeheader()
-                            writer.writerows(data)
-                        logger.info(f"Data exported to fallback path: {fallback_path}")
+                    # Use the same output path for fallback
+                    with open(output_path, "w", newline="") as f:
+                        writer = csv.DictWriter(f, fieldnames=data[0].keys())
+                        writer.writeheader()
+                        writer.writerows(data)
+                    logger.info(f"Data exported to fallback path: {output_path}")
+                except Exception as inner_e:
+                    logger.error(f"Failed to write data to fallback path: {str(inner_e)}")
+                    return 1
         else:
             logger.warning("No data extracted")
 

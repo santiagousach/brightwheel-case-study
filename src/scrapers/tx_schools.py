@@ -100,13 +100,6 @@ class TXSchoolsScraper(BaseScraper):
                 )
                 self._extract_data_from_results_page()
 
-            # Step 5: Make sure we have data for at least a few schools
-            if len(self.schools_data) < 3:
-                self.logger.warning(
-                    f"Only found {len(self.schools_data)} schools. Using fallback data."
-                )
-                self._add_fallback_schools()
-
             # Add scraper type for export functionality
             for school in self.schools_data:
                 school["scraper_type"] = "tx"
@@ -131,10 +124,10 @@ class TXSchoolsScraper(BaseScraper):
                     f"Returning partial data for {len(self.schools_data)} schools"
                 )
                 return self.schools_data
-
-            # Otherwise, use fallback data
-            self._add_fallback_schools()
-            return self.schools_data
+            else:
+                # Return empty list if no data was collected
+                self.logger.warning("No data was collected")
+                return []
 
     def _apply_grade_level_filters(self) -> None:
         """Apply grade level filters to the search results based on the requirement."""
@@ -143,234 +136,281 @@ class TXSchoolsScraper(BaseScraper):
         )
 
         try:
-            # From the screenshots, we can see we need to select grade level checkboxes
-            # rather than use a dropdown
-
-            # First, look for the "School Enrollment Type" dropdown to expand it if needed
-            enrollment_selectors = [
-                "div.MuiFormControl-root button",
-                "div.MuiSelect-root",
-                "//div[contains(text(), 'School Enrollment Type')]",
-                "//label[contains(text(), 'School Enrollment Type')]",
-                ".MuiFormControl-root:contains('School Enrollment Type')",
-                "select:contains('School Enrollment Type')",
+            # Wait for the page to be properly loaded
+            wait = WebDriverWait(self.driver, 10)
+            wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            
+            # Look for the filter section/button first
+            filter_selectors = [
+                "button[aria-label='filter']", 
+                "button:contains('Filter')",
+                "[data-testid='FilterListIcon']",
+                ".MuiButton-contained:contains('Filter')",
+                "div.filter-button button",
+                "button.filter-button",
+                "//button[contains(text(), 'Filter')]",
+                "//span[contains(text(), 'Filter')]/parent::button",
             ]
-
-            for selector in enrollment_selectors:
+            
+            # Try to open the filter panel if needed
+            for selector in filter_selectors:
                 try:
-                    by_type = (
-                        By.CSS_SELECTOR if not selector.startswith("//") else By.XPATH
-                    )
+                    by_type = By.CSS_SELECTOR if not selector.startswith("//") else By.XPATH
                     elements = self.driver.find_elements(by_type, selector)
                     for elem in elements:
-                        if elem.is_displayed() and "Enrollment" in elem.text:
-                            self.logger.info(
-                                f"Found School Enrollment Type element: {elem.text}"
-                            )
+                        if elem.is_displayed():
+                            self.logger.info(f"Found filter button: {elem.text if hasattr(elem, 'text') else 'Button'}")
                             try:
                                 elem.click()
-                                time.sleep(1)
-                            except Exception:
-                                self.driver.execute_script(
-                                    "arguments[0].click();", elem
-                                )
-                                time.sleep(1)
-                            break
+                                time.sleep(2)  # Wait for filter panel to open
+                                self.logger.info("Clicked filter button")
+                                # Take a screenshot after opening filter panel if not in headless mode
+                                if not self.headless:
+                                    screenshot_path = "tx_filter_panel.png"
+                                    self.driver.save_screenshot(screenshot_path)
+                                    self.logger.info(f"Screenshot saved to {screenshot_path}")
+                                break
+                            except Exception as e:
+                                self.logger.debug(f"Error clicking filter button: {str(e)}")
+                                try:
+                                    self.driver.execute_script("arguments[0].click();", elem)
+                                    time.sleep(2)
+                                    self.logger.info("Clicked filter button using JavaScript")
+                                    break
+                                except Exception as e2:
+                                    self.logger.debug(f"Error clicking filter button with JS: {str(e2)}")
                 except Exception as e:
-                    self.logger.debug(
-                        f"Error with enrollment selector {selector}: {str(e)}"
-                    )
+                    self.logger.debug(f"Error with filter selector {selector}: {str(e)}")
 
-            # Now, look for "Early Education" grade level checkbox
-            early_ed_selectors = [
-                "//label[contains(text(), 'Early Education')]",
-                "//input[@type='checkbox']/following-sibling::*[contains(text(), 'Early Education')]",
-                "input[type='checkbox'][name*='Early']",
-                "input[type='checkbox'][name*='early']",
+            # Expanded list of selectors for the grade level section
+            grade_section_selectors = [
+                "div.MuiAccordion-root:contains('Grade')",
+                "//div[contains(text(), 'Grade')]/ancestor::div[contains(@class, 'MuiAccordion-root')]",
+                "//div[contains(text(), 'Grade Level')]/ancestor::div[contains(@class, 'MuiAccordion-root')]",
+                "div.grade-filter",
+                "[data-testid='grade-filter']",
+                "div.filter-section:contains('Grade')",
+                "//button[contains(text(), 'Grade')]/parent::div",
+                "//span[contains(text(), 'Grade')]/ancestor::div[3]",
+                "div.filter-panel div.filter-group:contains('Grade')"
             ]
-
-            for selector in early_ed_selectors:
+            
+            # Try to expand the grade level section if it's collapsed
+            for selector in grade_section_selectors:
                 try:
-                    by_type = (
-                        By.CSS_SELECTOR if not selector.startswith("//") else By.XPATH
-                    )
+                    by_type = By.CSS_SELECTOR if not selector.startswith("//") else By.XPATH
                     elements = self.driver.find_elements(by_type, selector)
                     for elem in elements:
                         if elem.is_displayed():
-                            self.logger.info(
-                                f"Found Early Education checkbox: {elem.text if hasattr(elem, 'text') else 'checkbox'}"
-                            )
-                            # If this is a label, try to find the associated checkbox
-                            if (
-                                hasattr(elem, "text")
-                                and elem.tag_name.lower() == "label"
-                            ):
-                                try:
-                                    checkbox = elem.find_element(
-                                        By.XPATH, "../input[@type='checkbox']"
-                                    ) or elem.find_element(
-                                        By.XPATH,
-                                        "preceding-sibling::input[@type='checkbox']",
-                                    )
-                                    if not checkbox.is_selected():
-                                        self.driver.execute_script(
-                                            "arguments[0].click();", checkbox
-                                        )
-                                        self.logger.info(
-                                            "Selected Early Education checkbox"
-                                        )
-                                        time.sleep(0.5)
-                                except Exception:
-                                    # If we can't find the checkbox directly, try clicking the label
-                                    self.driver.execute_script(
-                                        "arguments[0].click();", elem
-                                    )
-                                    self.logger.info("Clicked Early Education label")
-                                    time.sleep(0.5)
-                            else:
-                                # This is the checkbox itself
-                                if not elem.is_selected():
-                                    self.driver.execute_script(
-                                        "arguments[0].click();", elem
-                                    )
-                                    self.logger.info(
-                                        "Selected Early Education checkbox"
-                                    )
-                                    time.sleep(0.5)
+                            self.logger.info(f"Found grade level section: {elem.text if hasattr(elem, 'text') else 'Section'}")
+                            # Try to expand it if it's collapsed
+                            try:
+                                expand_elements = elem.find_elements(By.CSS_SELECTOR, ".MuiAccordionSummary-root, .MuiButtonBase-root")
+                                for expand_elem in expand_elements:
+                                    if expand_elem.is_displayed():
+                                        expand_elem.click()
+                                        self.logger.info("Expanded grade level section")
+                                        time.sleep(1)
+                                        break
+                            except Exception as e:
+                                self.logger.debug(f"Error expanding grade section: {str(e)}")
                 except Exception as e:
-                    self.logger.debug(
-                        f"Error with Early Education selector {selector}: {str(e)}"
-                    )
-
-            # Look for "Prekindergarten" checkbox
-            prekg_selectors = [
-                "//label[contains(text(), 'Prekindergarten')]",
-                "//input[@type='checkbox']/following-sibling::*[contains(text(), 'Prekindergarten')]",
-                "input[type='checkbox'][name*='Pre']",
-                "input[type='checkbox'][name*='pre']",
+                    self.logger.debug(f"Error with grade section selector {selector}: {str(e)}")
+            
+            # Enhanced list of grade level checkbox selectors
+            grade_checkboxes = [
+                # Early Education
+                {"name": "Early Education", "selectors": [
+                    "//label[contains(text(), 'Early Education')]",
+                    "//input[@type='checkbox']/following-sibling::*[contains(text(), 'Early Education')]",
+                    "input[type='checkbox'][name*='Early']",
+                    "input[type='checkbox'][name*='early']",
+                    "//span[contains(text(), 'Early Education')]/ancestor::label",
+                    "//div[contains(text(), 'Early Education')]/preceding-sibling::span/input",
+                    "[data-testid='early-education-checkbox']"
+                ]},
+                # Prekindergarten
+                {"name": "Prekindergarten", "selectors": [
+                    "//label[contains(text(), 'Prekindergarten')]",
+                    "//input[@type='checkbox']/following-sibling::*[contains(text(), 'Prekindergarten')]",
+                    "input[type='checkbox'][name*='Pre']",
+                    "input[type='checkbox'][name*='pre']",
+                    "//span[contains(text(), 'Prekindergarten')]/ancestor::label",
+                    "//div[contains(text(), 'Prekindergarten')]/preceding-sibling::span/input",
+                    "[data-testid='prekindergarten-checkbox']",
+                    "//label[contains(text(), 'Pre-K')]",
+                    "//input[@type='checkbox']/following-sibling::*[contains(text(), 'Pre-K')]",
+                ]},
+                # Kindergarten
+                {"name": "Kindergarten", "selectors": [
+                    "//label[contains(text(), 'Kindergarten')]",
+                    "//input[@type='checkbox']/following-sibling::*[contains(text(), 'Kindergarten')]",
+                    "input[type='checkbox'][name*='Kinder']",
+                    "input[type='checkbox'][name*='kinder']",
+                    "//span[contains(text(), 'Kindergarten')]/ancestor::label",
+                    "//div[contains(text(), 'Kindergarten')]/preceding-sibling::span/input",
+                    "[data-testid='kindergarten-checkbox']",
+                    "//label[contains(text(), 'K')]",
+                    "//input[@type='checkbox']/following-sibling::*[contains(text(), 'K ')]",
+                ]}
             ]
 
-            for selector in prekg_selectors:
-                try:
-                    by_type = (
-                        By.CSS_SELECTOR if not selector.startswith("//") else By.XPATH
-                    )
-                    elements = self.driver.find_elements(by_type, selector)
-                    for elem in elements:
-                        if elem.is_displayed():
-                            self.logger.info(
-                                f"Found Prekindergarten checkbox: {elem.text if hasattr(elem, 'text') else 'checkbox'}"
-                            )
-                            # If this is a label, try to find the associated checkbox
-                            if (
-                                hasattr(elem, "text")
-                                and elem.tag_name.lower() == "label"
-                            ):
-                                try:
-                                    checkbox = elem.find_element(
-                                        By.XPATH, "../input[@type='checkbox']"
-                                    ) or elem.find_element(
-                                        By.XPATH,
-                                        "preceding-sibling::input[@type='checkbox']",
-                                    )
-                                    if not checkbox.is_selected():
-                                        self.driver.execute_script(
-                                            "arguments[0].click();", checkbox
-                                        )
-                                        self.logger.info(
-                                            "Selected Prekindergarten checkbox"
-                                        )
-                                        time.sleep(0.5)
-                                except Exception:
-                                    # If we can't find the checkbox directly, try clicking the label
-                                    self.driver.execute_script(
-                                        "arguments[0].click();", elem
-                                    )
-                                    self.logger.info("Clicked Prekindergarten label")
-                                    time.sleep(0.5)
-                            else:
-                                # This is the checkbox itself
-                                if not elem.is_selected():
-                                    self.driver.execute_script(
-                                        "arguments[0].click();", elem
-                                    )
-                                    self.logger.info(
-                                        "Selected Prekindergarten checkbox"
-                                    )
-                                    time.sleep(0.5)
-                except Exception as e:
-                    self.logger.debug(
-                        f"Error with Prekindergarten selector {selector}: {str(e)}"
-                    )
+            # Track whether we successfully selected any grade
+            selected_any_grade = False
 
-            # Look for "Kindergarten" checkbox
-            kg_selectors = [
-                "//label[contains(text(), 'Kindergarten')]",
-                "//input[@type='checkbox']/following-sibling::*[contains(text(), 'Kindergarten')]",
-                "input[type='checkbox'][name*='Kindergarten']",
-                "input[type='checkbox'][name*='kindergarten']",
+            # Try to select each grade level checkbox
+            for grade in grade_checkboxes:
+                grade_selected = False
+                for selector in grade["selectors"]:
+                    try:
+                        by_type = By.CSS_SELECTOR if not selector.startswith("//") else By.XPATH
+                        elements = self.driver.find_elements(by_type, selector)
+                        for elem in elements:
+                            if elem.is_displayed():
+                                self.logger.info(f"Found {grade['name']} checkbox/label")
+                                
+                                # If this is a label, try to find the associated checkbox
+                                if hasattr(elem, "tag_name") and elem.tag_name.lower() == "label":
+                                    try:
+                                        checkbox = elem.find_element(By.XPATH, "..//input[@type='checkbox']") or \
+                                                elem.find_element(By.XPATH, "preceding-sibling::input[@type='checkbox']") or \
+                                                elem.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
+                                        
+                                        if not checkbox.is_selected():
+                                            try:
+                                                checkbox.click()
+                                                self.logger.info(f"Selected {grade['name']} checkbox")
+                                                time.sleep(0.5)
+                                                grade_selected = True
+                                                selected_any_grade = True
+                                                break
+                                            except:
+                                                self.driver.execute_script("arguments[0].click();", checkbox)
+                                                self.logger.info(f"Selected {grade['name']} checkbox using JavaScript")
+                                                time.sleep(0.5)
+                                                grade_selected = True
+                                                selected_any_grade = True
+                                                break
+                                    except Exception as e:
+                                        # If we can't find the checkbox directly, try clicking the label
+                                        try:
+                                            elem.click()
+                                            self.logger.info(f"Clicked {grade['name']} label")
+                                            time.sleep(0.5)
+                                            grade_selected = True
+                                            selected_any_grade = True
+                                            break
+                                        except:
+                                            self.driver.execute_script("arguments[0].click();", elem)
+                                            self.logger.info(f"Clicked {grade['name']} label using JavaScript")
+                                            time.sleep(0.5)
+                                            grade_selected = True
+                                            selected_any_grade = True
+                                            break
+                                else:
+                                    # This is the checkbox itself or another clickable element
+                                    if hasattr(elem, "is_selected") and not elem.is_selected():
+                                        try:
+                                            elem.click()
+                                            self.logger.info(f"Selected {grade['name']} checkbox")
+                                            time.sleep(0.5)
+                                            grade_selected = True
+                                            selected_any_grade = True
+                                            break
+                                        except:
+                                            self.driver.execute_script("arguments[0].click();", elem)
+                                            self.logger.info(f"Selected {grade['name']} checkbox using JavaScript")
+                                            time.sleep(0.5)
+                                            grade_selected = True
+                                            selected_any_grade = True
+                                            break
+                                    else:
+                                        try:
+                                            elem.click()
+                                            self.logger.info(f"Clicked {grade['name']} element")
+                                            time.sleep(0.5)
+                                            grade_selected = True
+                                            selected_any_grade = True
+                                            break
+                                        except:
+                                            self.driver.execute_script("arguments[0].click();", elem)
+                                            self.logger.info(f"Clicked {grade['name']} element using JavaScript")
+                                            time.sleep(0.5)
+                                            grade_selected = True
+                                            selected_any_grade = True
+                                            break
+                    except Exception as e:
+                        self.logger.debug(f"Error with {grade['name']} selector {selector}: {str(e)}")
+                
+                if grade_selected:
+                    self.logger.info(f"Successfully selected {grade['name']} grade level")
+                else:
+                    self.logger.warning(f"Failed to select {grade['name']} grade level")
+            
+            # Look for an "Apply" or "Submit" button and click it
+            if selected_any_grade:
+                apply_selectors = [
+                    "button[type='submit']",
+                    "button.submit-button",
+                    "button.apply-button",
+                    ".MuiButton-contained:contains('Apply')",
+                    ".MuiButton-contained:contains('Submit')",
+                    "//button[contains(text(), 'Apply')]",
+                    "//button[contains(text(), 'Submit')]",
+                    "//span[contains(text(), 'Apply')]/parent::button",
+                    "//span[contains(text(), 'Submit')]/parent::button",
+                ]
+                
+                for selector in apply_selectors:
+                    try:
+                        by_type = By.CSS_SELECTOR if not selector.startswith("//") else By.XPATH
+                        elements = self.driver.find_elements(by_type, selector)
+                        for elem in elements:
+                            if elem.is_displayed():
+                                try:
+                                    elem.click()
+                                    self.logger.info(f"Clicked apply button: {elem.text if hasattr(elem, 'text') else 'Button'}")
+                                    time.sleep(2)  # Wait for filter to be applied
+                                    # Take a screenshot after applying filters if not in headless mode
+                                    if not self.headless:
+                                        screenshot_path = "tx_after_filter.png"
+                                        self.driver.save_screenshot(screenshot_path)
+                                        self.logger.info(f"Screenshot saved to {screenshot_path}")
+                                    break
+                                except:
+                                    self.driver.execute_script("arguments[0].click();", elem)
+                                    self.logger.info(f"Clicked apply button using JavaScript: {elem.text if hasattr(elem, 'text') else 'Button'}")
+                                    time.sleep(2)
+                                    break
+                    except Exception as e:
+                        self.logger.debug(f"Error with apply button selector {selector}: {str(e)}")
+                
+            # Wait for any loading indicators to disappear
+            loading_selectors = [
+                ".MuiCircularProgress-root",
+                "[role='progressbar']",
+                ".loading-indicator",
+                ".MuiLinearProgress-root",
             ]
-
-            for selector in kg_selectors:
+            
+            for selector in loading_selectors:
                 try:
-                    by_type = (
-                        By.CSS_SELECTOR if not selector.startswith("//") else By.XPATH
-                    )
-                    elements = self.driver.find_elements(by_type, selector)
-                    for elem in elements:
-                        if elem.is_displayed():
-                            self.logger.info(
-                                f"Found Kindergarten checkbox: {elem.text if hasattr(elem, 'text') else 'checkbox'}"
-                            )
-                            # If this is a label, try to find the associated checkbox
-                            if (
-                                hasattr(elem, "text")
-                                and elem.tag_name.lower() == "label"
-                            ):
-                                try:
-                                    checkbox = elem.find_element(
-                                        By.XPATH, "../input[@type='checkbox']"
-                                    ) or elem.find_element(
-                                        By.XPATH,
-                                        "preceding-sibling::input[@type='checkbox']",
-                                    )
-                                    if not checkbox.is_selected():
-                                        self.driver.execute_script(
-                                            "arguments[0].click();", checkbox
-                                        )
-                                        self.logger.info(
-                                            "Selected Kindergarten checkbox"
-                                        )
-                                        time.sleep(0.5)
-                                except Exception:
-                                    # If we can't find the checkbox directly, try clicking the label
-                                    self.driver.execute_script(
-                                        "arguments[0].click();", elem
-                                    )
-                                    self.logger.info("Clicked Kindergarten label")
-                                    time.sleep(0.5)
-                            else:
-                                # This is the checkbox itself
-                                if not elem.is_selected():
-                                    self.driver.execute_script(
-                                        "arguments[0].click();", elem
-                                    )
-                                    self.logger.info("Selected Kindergarten checkbox")
-                                    time.sleep(0.5)
+                    loaders = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    if loaders:
+                        wait = WebDriverWait(self.driver, 15)
+                        wait.until(EC.invisibility_of_element_located((By.CSS_SELECTOR, selector)))
+                        self.logger.info("Waited for loading indicator to disappear")
                 except Exception as e:
-                    self.logger.debug(
-                        f"Error with Kindergarten selector {selector}: {str(e)}"
-                    )
-
-            # Take a screenshot after setting filters if not in headless mode
-            if not self.headless:
-                screenshot_path = "tx_filters_applied.png"
-                self.driver.save_screenshot(screenshot_path)
-                self.logger.info(f"Screenshot saved to {screenshot_path}")
-
+                    self.logger.debug(f"Error waiting for loading indicator: {str(e)}")
+            
         except Exception as e:
-            self.logger.error(f"Error applying grade filters: {str(e)}")
-            self.logger.warning("Continuing without grade level filters")
+            self.logger.error(f"Error applying grade level filters: {str(e)}")
+            # Take screenshot of the error state if not in headless mode
+            if not self.headless:
+                screenshot_path = "tx_filter_error.png"
+                self.driver.save_screenshot(screenshot_path)
+                self.logger.info(f"Error state screenshot saved to {screenshot_path}")
+            raise  # Re-raise the exception to be handled by the calling method
 
     def _apply_rating_filters(self) -> None:
         """Apply school rating filters (A, B, C)."""
@@ -1049,39 +1089,229 @@ class TXSchoolsScraper(BaseScraper):
                 self.logger.debug(f"Error finding general links: {str(e)}")
 
     def _try_fallback_methods(self) -> None:
-        """Final fallback methods to find schools if all else fails."""
-        self.logger.info("Trying fallback methods to find schools")
+        """Try additional methods to find school data if primary methods fail."""
+        self.logger.info("Trying fallback methods to find school data")
 
-        # Fallback 1: Try direct URLs for known schools
-        fallback_urls = [
-            # Examples of actual Texas school URLs
-            "https://txschools.gov/schools/057910001/overview",  # Cedar Hill High School
-            "https://txschools.gov/schools/101912101/overview",  # Cypress Creek High School
-            "https://txschools.gov/schools/227901101/overview",  # Coronado High School
-            "https://txschools.gov/schools/015905002/overview",  # A&M Consolidated Middle School
-            "https://txschools.gov/schools/015907001/overview",  # Rudder High School
-            "https://txschools.gov/schools/101919001/overview",  # Bellaire High School
-            "https://txschools.gov/schools/227901001/overview",  # Lubbock High School
-            "https://txschools.gov/schools/057905001/overview",  # Lancaster High School
-            "https://txschools.gov/schools/101910008/overview",  # Memorial High School
-            "https://txschools.gov/schools/220905002/overview",  # Granbury Middle School
-        ]
+        try:
+            # Look for school cards or list items instead of a table
+            card_selectors = [
+                ".MuiCard-root",
+                "div[role='listitem']",
+                "div.school-card",
+                "div.school-item",
+                "div.result-item",
+                ".MuiPaper-root",
+                "div.search-result-item",
+                "div.school-result",
+            ]
 
-        for url in fallback_urls:
-            if url not in self.school_links:
-                self.school_links.append(url)
-                self.logger.info(f"Added fallback school URL: {url}")
+            cards_found = False
+            for selector in card_selectors:
+                cards = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                if cards:
+                    self.logger.info(f"Found {len(cards)} potential school cards with selector {selector}")
+                    for card in cards:
+                        try:
+                            school_data = {
+                                "company": "",
+                                "address1": "",
+                                "address2": "",
+                                "city": "",
+                                "state": "TX",  # Default for Texas
+                                "zip": "",
+                                "phone": "",
+                                "website": "",
+                                "grades_served": "",
+                                "district": "",
+                            }
 
-                # Limit the number of schools
-                if len(self.school_links) >= self.config.get("max_schools", 10):
-                    break
+                            # Try to find the school name
+                            name_elements = card.find_elements(
+                                By.CSS_SELECTOR, 
+                                "h2, h3, h4, div.title, div.school-name, div.name, .MuiTypography-h5, .MuiTypography-h6, a"
+                            )
+                            for name_elem in name_elements:
+                                if name_elem.is_displayed() and name_elem.text.strip():
+                                    school_data["company"] = name_elem.text.strip()
+                                    break
 
-        # Fallback 2: If we have no school links, extract directly from the results page
-        if not self.school_links:
-            self.logger.info(
-                "No school links found, extracting data directly from results page"
-            )
-            self._extract_data_from_results_page()
+                            # Skip if we couldn't find a name or if it's too short to be a real school name
+                            if not school_data["company"] or len(school_data["company"]) < 3:
+                                continue
+
+                            # Try to find the address
+                            address_elements = card.find_elements(
+                                By.CSS_SELECTOR,
+                                "div.address, div.location, .MuiTypography-body1, p"
+                            )
+                            for addr_elem in address_elements:
+                                text = addr_elem.text.strip()
+                                if text and ("TX" in text or "," in text):
+                                    # This looks like an address
+                                    address_parts = parse_address(text)
+                                    school_data["address1"] = address_parts.get("address1", "")
+                                    school_data["address2"] = address_parts.get("address2", "")
+                                    school_data["city"] = address_parts.get("city", "")
+                                    school_data["state"] = address_parts.get("state", "TX")
+                                    school_data["zip"] = address_parts.get("zip", "")
+                                    break
+
+                            # Try to find the district
+                            district_elements = card.find_elements(
+                                By.CSS_SELECTOR,
+                                "div.district, div.school-district, .district-name, .MuiTypography-body2"
+                            )
+                            for district_elem in district_elements:
+                                text = district_elem.text.strip()
+                                if text and "district" in text.lower():
+                                    school_data["district"] = text
+                                    break
+
+                            # Try to find grades served
+                            grades_elements = card.find_elements(
+                                By.CSS_SELECTOR,
+                                "div.grades, div.grade-levels, .grades-served, .MuiTypography-caption"
+                            )
+                            for grades_elem in grades_elements:
+                                text = grades_elem.text.strip()
+                                if text and ("grade" in text.lower() or "prek" in text.lower() or "kindergarten" in text.lower()):
+                                    school_data["grades_served"] = text
+                                    break
+
+                            # Try to find phone number
+                            phone_elements = card.find_elements(
+                                By.CSS_SELECTOR,
+                                "div.phone, div.contact, a[href^='tel:'], .phone-number"
+                            )
+                            for phone_elem in phone_elements:
+                                if phone_elem.tag_name == "a" and phone_elem.get_attribute("href").startswith("tel:"):
+                                    school_data["phone"] = format_phone(phone_elem.get_attribute("href").replace("tel:", ""))
+                                    break
+                                elif phone_elem.text and re.search(r'\d{3}[-.\s]?\d{3}[-.\s]?\d{4}', phone_elem.text):
+                                    phone_match = re.search(r'\d{3}[-.\s]?\d{3}[-.\s]?\d{4}', phone_elem.text)
+                                    if phone_match:
+                                        school_data["phone"] = format_phone(phone_match.group(0))
+                                        break
+
+                            # Try to find website
+                            website_elements = card.find_elements(
+                                By.CSS_SELECTOR,
+                                "a[href^='http']:not([href*='txschools.gov']), a.website, a.school-website"
+                            )
+                            for website_elem in website_elements:
+                                href = website_elem.get_attribute("href")
+                                if href and "txschools.gov" not in href:
+                                    school_data["website"] = href
+                                    break
+
+                            # Only include schools with target grades
+                            target_grades = ["early education", "prekindergarten", "pre-k", "prek", "kindergarten", "k-"]
+                            
+                            # Either use grades_served field if it's populated, or check the whole card text
+                            grades_text = school_data["grades_served"].lower()
+                            if not grades_text:
+                                grades_text = card.text.lower()
+                                
+                            has_target_grade = any(grade in grades_text for grade in target_grades)
+                            
+                            if has_target_grade and school_data["company"]:
+                                self.schools_data.append(school_data)
+                                self.logger.info(f"Added school from card: {school_data['company']}")
+                                cards_found = True
+                        except Exception as e:
+                            self.logger.warning(f"Error extracting data from card: {str(e)}")
+
+            if cards_found:
+                self.logger.info(f"Found {len(self.schools_data)} schools using card selectors")
+                return
+
+            # If we still don't have schools, try to parse the page content directly
+            self.logger.info("Trying to parse page content directly")
+            
+            # Get all the text content from the page
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            
+            # Look for patterns that might indicate school listings
+            # Texas school names often follow patterns
+            school_patterns = [
+                r'([A-Z][a-z]+\s(?:Elementary|Middle|High|Primary|Academy|School))',
+                r'([A-Z][a-z]+\s[A-Z][a-z]+\s(?:Elementary|Middle|High|Primary|Academy|School))',
+                r'([A-Z][a-z]+\s[A-Z][.]?\s[A-Z][a-z]+\s(?:Elementary|Middle|High|Primary|Academy|School))',
+                r'((?:Early|Learning|Academy|Education|Pre-K).{3,30}(?:School|Center|Campus))'
+            ]
+            
+            schools_found = set()
+            for pattern in school_patterns:
+                matches = re.finditer(pattern, body_text)
+                for match in matches:
+                    school_name = match.group(1).strip()
+                    if school_name not in schools_found and len(school_name) > 5:
+                        schools_found.add(school_name)
+                        
+                        # Try to find context for this school (text around the name)
+                        name_idx = body_text.find(school_name)
+                        if name_idx > 0:
+                            start_idx = max(0, name_idx - 300)
+                            end_idx = min(len(body_text), name_idx + 300)
+                            context = body_text[start_idx:end_idx]
+                            
+                            # Create a basic school entry
+                            school_data = {
+                                "company": school_name,
+                                "address1": "",
+                                "address2": "",
+                                "city": "",
+                                "state": "TX",  # Default for Texas
+                                "zip": "",
+                                "phone": "",
+                                "website": "",
+                                "grades_served": "",
+                                "district": "",
+                            }
+                            
+                            # Try to extract address from context
+                            address_match = re.search(r'\d+\s[A-Z][a-z]+\s(?:St|Dr|Ave|Rd|Blvd|Lane|Circle|Highway|Pkwy|Court)[,.]?\s[A-Za-z]+,?\s(?:TX|Texas)\s\d{5}', context)
+                            if address_match:
+                                address_parts = parse_address(address_match.group(0))
+                                school_data["address1"] = address_parts.get("address1", "")
+                                school_data["city"] = address_parts.get("city", "")
+                                school_data["state"] = address_parts.get("state", "TX")
+                                school_data["zip"] = address_parts.get("zip", "")
+                            
+                            # Try to extract phone from context
+                            phone_match = re.search(r'(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}', context)
+                            if phone_match:
+                                school_data["phone"] = format_phone(phone_match.group(0))
+                            
+                            # Try to extract district from context
+                            district_match = re.search(r'([A-Za-z\s]+\sISD)', context)
+                            if district_match:
+                                school_data["district"] = district_match.group(1)
+                            
+                            # Try to find grade levels
+                            if "early education" in context.lower() or "pre-k" in context.lower() or "prek" in context.lower() or "kindergarten" in context.lower():
+                                for line in context.split('\n'):
+                                    line = line.lower()
+                                    if "grade" in line or "prek" in line or "pre-k" in line or "kindergarten" in line:
+                                        school_data["grades_served"] = line.strip()
+                                        break
+                            
+                            # Only add if we think this is actually a preK/K school
+                            target_grades = ["early education", "prekindergarten", "pre-k", "prek", "kindergarten", "k-"]
+                            if any(grade in context.lower() for grade in target_grades):
+                                self.schools_data.append(school_data)
+                                self.logger.info(f"Added school from text analysis: {school_name}")
+            
+            if schools_found:
+                self.logger.info(f"Found {len(schools_found)} schools using text pattern analysis")
+
+        except Exception as e:
+            self.logger.error(f"Error in fallback methods: {str(e)}")
+            # Take a screenshot of the error state if not in headless mode
+            if not self.headless:
+                screenshot_path = "tx_fallback_error.png"
+                self.driver.save_screenshot(screenshot_path)
+                self.logger.info(f"Error state screenshot saved to {screenshot_path}")
 
     def _extract_data_from_results_page(self) -> None:
         """Extract school data directly from results page when no links can be followed."""
@@ -1274,60 +1504,6 @@ class TXSchoolsScraper(BaseScraper):
         except Exception as e:
             self.logger.error(f"Error extracting data from results page: {str(e)}")
 
-        # If we found no schools (or very few), use fallback data
-        if len(self.schools_data) < 3:
-            self._add_fallback_schools()
-
-    def _add_fallback_schools(self) -> None:
-        """Add fallback school data if we couldn't extract enough from the site."""
-        self.logger.info("Adding fallback school data")
-
-        fallback_schools = [
-            {
-                "company": "21st Century Early Learning Foundation Academy",
-                "address1": "400 S Oklahoma Ave",
-                "address2": "",
-                "city": "Weslaco",
-                "state": "TX",
-                "zip": "78596",
-                "phone": "",
-                "website": "",
-                "grades_served": "Prekindergarten",
-                "district": "Weslaco ISD",
-            },
-            {
-                "company": "A G Elder Elementary School",
-                "address1": "513 Henderson St",
-                "address2": "",
-                "city": "Joshua",
-                "state": "TX",
-                "zip": "76058",
-                "phone": "",
-                "website": "",
-                "grades_served": "Early Education - Grade 5",
-                "district": "Joshua ISD",
-            },
-            {
-                "company": "A M Pate Elementary School",
-                "address1": "3800 Anglin Dr",
-                "address2": "",
-                "city": "Fort Worth",
-                "state": "TX",
-                "zip": "76119",
-                "phone": "",
-                "website": "",
-                "grades_served": "Prekindergarten - Grade 5",
-                "district": "Fort Worth ISD",
-            },
-        ]
-
-        # Add fallback schools but avoid duplicates
-        existing_schools = {s["company"] for s in self.schools_data}
-        for school in fallback_schools:
-            if school["company"] not in existing_schools:
-                self.schools_data.append(school)
-                self.logger.info(f"Added fallback school: {school['company']}")
-
     def _extract_school_details(self) -> None:
         """Extract details from each school page."""
         self.logger.info(
@@ -1484,31 +1660,12 @@ class TXSchoolsScraper(BaseScraper):
                                 f"Error finding school name with selector {selector}: {str(e)}"
                             )
 
-                        # If still no name found, try a direct lookup with known school IDs
-                        if (
-                            not school_data["company"]
-                            or school_data["company"] == "Not Found"
-                        ):
-                            known_schools = {
-                                "057910001": "Cedar Hill High School",
-                                "101912101": "Cypress Creek High School",
-                                "227901101": "Coronado High School",
-                                "015905002": "A&M Consolidated Middle School",
-                                "015907001": "Rudder High School",
-                                "101919001": "Bellaire High School",
-                                "227901001": "Lubbock High School",
-                                "057905001": "Lancaster High School",
-                                "101910008": "Memorial High School",
-                                "220905002": "Granbury Middle School",
-                            }
-
-                            if school_id in known_schools:
-                                school_data["company"] = known_schools[school_id]
-                                self.logger.info(
-                                    f"Using hardcoded school name: {school_data['company']}"
-                                )
-                                # Also set State to TX
-                                school_data["state"] = "TX"
+                        # If still no name found, use the school ID as a last resort
+                        if not school_data["company"] or school_data["company"] == "Not Found":
+                            school_data["company"] = f"School ID: {school_id}"
+                            self.logger.info(f"Using school ID as name: {school_data['company']}")
+                            # Default state to TX
+                            school_data["state"] = "TX"
 
                 # Extract address - based on screenshot, look for "Address:" label
                 address_selectors = [
