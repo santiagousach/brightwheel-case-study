@@ -1,0 +1,80 @@
+# Texas Schools (https://txschools.gov) Scraper Configuration
+
+# Base URL and navigation
+base_url: "https://txschools.gov/?view=schools&lng=en"
+search_results_url_pattern: "https://txschools.gov/?view=schools&lng=en&page={page}"
+
+# Filter settings
+filters:
+  grade_levels:
+    - "Early Education"
+    - "Prekindergarten"
+    - "Kindergarten"
+
+# Wait times and retries
+wait_timeout: 20
+element_wait_timeout: 10
+retry_attempts: 3
+retry_delay: 2
+
+# Data fields to extract
+data_fields:
+  - company
+  - address1
+  - address2
+  - city
+  - state
+  - zip
+  - phone
+  - website
+  - grades_served
+  - district
+
+# Regex patterns for data extraction
+patterns:
+  address:
+    pattern: "(.*?)(?:,\\s*([^,]+))?(?:,\\s*([A-Z]{2})\\s*(\\d{5}(?:-\\d{4})?))?$"
+    groups:
+      - address1
+      - city
+      - state
+      - zip
+  phone:
+    pattern: "\\(?(\\d{3})\\)?[-.\\s]?(\\d{3})[-.\\s]?(\\d{4})"
+
+# Selectors
+selectors:
+  # Search page selectors
+  search_results:
+    schools_container: "div.school-search-results"
+    school_card: "div.MuiCard-root, div.MuiPaper-root"
+    school_link: "a[href*='campus']"
+    pagination:
+      next_button: "button[aria-label='Next Page']"
+      page_info: "div.pagination-results"
+  
+  # Filter selectors
+  filters:
+    filter_button: "button[data-test-id='filter-button']"
+    grade_level_dropdown: "div[contains(text(), 'Grade Levels')]/.."
+    grade_level_options: "div.checkbox-list-option"
+    grade_level_checkbox: "input[type='checkbox']"
+    grade_level_label: "label"
+    apply_filters_button: "button[data-test-id='apply-filters-button']"
+  
+  # School detail page selectors
+  school_details:
+    school_name: "h1.school-header-title, h1, div.school-name, div.campus-name"
+    address: "div.school-header-address, div.address, div[data-test-id*='address']"
+    phone: "a[href^='tel:'], div.phone, span.phone"
+    website: "a.school-website-link, a[href^='http']:not([href^='mailto:']):not([href^='tel:'])"
+    grades_served: "li.school-grades-served span.info, div.grades-served, span.grades"
+    district: "li.school-district a, div.district, a.district-link"
+
+# Error handling
+retry_attempts: 3
+retry_delay: 2
+
+# Page loading
+wait_timeout: 20
+element_wait_timeout: 10 

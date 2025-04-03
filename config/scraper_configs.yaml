@@ -1,0 +1,33 @@
+# Configuration for web scrapers
+
+# Texas Schools scraper configuration
+tx_schools:
+  base_url: "https://txschools.gov/?view=schools&lng=en"
+  retry_attempts: 3
+  wait_timeout: 15  # Seconds to wait for elements
+  filters:
+    grade_levels:
+      - "Early Education"
+      - "Prekindergarten"
+      - "Kindergarten"
+  output:
+    file: "texas_schools.csv"
+
+# Arizona Schools scraper configuration
+az_schools:
+  base_url: "https://azreportcards.azed.gov/schools"
+  retry_attempts: 3
+  wait_timeout: 15  # Seconds to wait for elements
+  filters:
+    grade_levels:
+      - "Pre-Kindergarten"
+      - "Kindergarten"
+      - "PreK"
+      - "Early Childhood"
+  output:
+    file: "arizona_schools.csv"
+  testing:
+    enabled: true
+    max_letters: 1
+    max_pages_per_letter: 1
+    max_schools: 5 

@@ -1,0 +1,92 @@
+# Arizona Schools (https://azreportcards.azed.gov/schools) Scraper Configuration
+
+# Base URL and navigation
+base_url: "https://azreportcards.azed.gov/schools"
+search_results_url_pattern: "https://azreportcards.azed.gov/schools"
+
+# Filter settings
+filters:
+  grade_levels:
+    - "Pre-Kindergarten"
+    - "Kindergarten"
+    - "PreK"
+    - "Early Childhood"
+
+# Wait times and retries
+wait_timeout: 20
+element_wait_timeout: 10
+retry_attempts: 3
+retry_delay: 2
+
+# Data fields to extract
+data_fields:
+  - company
+  - address1
+  - address2
+  - city
+  - state
+  - zip
+  - phone
+  - website
+  - grades_served
+  - district
+
+# Regex patterns for data extraction
+patterns:
+  address:
+    pattern: "(.*?)(?:,\\s*([^,]+))?(?:,\\s*([A-Z]{2})\\s*(\\d{5}(?:-\\d{4})?))?$"
+    groups:
+      - address1
+      - city
+      - state
+      - zip
+  phone:
+    pattern: "\\(?(\\d{3})\\)?[-.\\s]?(\\d{3})[-.\\s]?(\\d{4})"
+
+# Selectors
+selectors:
+  # Alphabetical navigation selectors
+  alphabetical_navigation:
+    navigation_container: ".alphabetical-navigation"
+    letter_button: "button"
+    all_button: "button[text()='ALL']"
+  
+  # Search page selectors
+  search_results:
+    schools_container: ".school-list, .schools-list, .school-items, .MuiGrid-root"
+    school_item: ".school-item, div.school, .MuiGrid-item"
+    school_link: "a[href*='schools/school'], .school-list a, .school-item a, .schools-list a, .MuiGrid-root a, div.school a"
+    pagination:
+      next_button: "button[aria-label='Next Page'], .pagination-next, button.next-page"
+      page_info: ".pagination-info, .pagination-indicator"
+  
+  # School detail page selectors
+  school_details:
+    school_name: "h1, .school-header, .school-name, .school-title, .MuiTypography-h4"
+    address: ".school-address, .contact-info address, .location, div[contains(text(), 'Address:')]/following-sibling::div"
+    phone: ".school-phone, .contact-info a[href^='tel:'], div[contains(text(), 'Phone:')]/following-sibling::div"
+    website: ".school-website, .contact-info a[href^='http']:not([href^='mailto:']):not([href^='tel:']), a.school-link, a.website-link"
+    grades_served: ".school-grades, .grades-served, div[contains(text(), 'Grades Served:')]/following-sibling::div"
+    district: ".school-district, .district-name, div[contains(text(), 'District:')]/following-sibling::div"
+    
+# Additional selectors for specific sections on the page
+sections:
+  contact_info: ".contact-info, .school-contact, .school-info"
+  details_section: ".school-details, .details-section, .school-information"
+  overview_section: ".school-overview, .overview-section"
+
+# Error handling
+retry_attempts: 3
+retry_delay: 2
+
+# Page loading
+wait_timeout: 20
+element_wait_timeout: 10
+
+# Testing settings
+# Use these to limit the scraping scope for testing
+testing:
+  enabled: true
+  max_letters: 1
+  max_pages_per_letter: 1
+  max_schools: 5 

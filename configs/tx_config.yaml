@@ -1,0 +1,67 @@
+base_url: https://txschools.gov/?view=schools&lng=en
+
+# Maximum number of schools to scrape (for testing)
+max_schools: 50
+
+# Output configuration
+output:
+  format: csv
+  path: /app/data/tx_schools.csv
+
+# Filters for narrowing down school selection
+filters:
+  grade_levels:
+    - "Early Education"
+    - "Prekindergarten"
+    - "Kindergarten"
+  
+  regions:
+    - "Austin"
+    - "Dallas"
+    - "Houston"
+
+# Selectors for extracting data
+selectors:
+  search:
+    input: "input[placeholder='Enter Your Address, City, or Zip Code']"
+    button: "button.MuiButtonBase-root"
+  
+  filters:
+    grade_levels_container: "div:contains('Grade Levels')"
+    early_ed_checkbox: "//label[contains(text(), 'Early Education')]"
+    prekg_checkbox: "//label[contains(text(), 'Prekindergarten')]"
+    kindergarten_checkbox: "//label[contains(text(), 'Kindergarten')]"
+    
+    rating_checkboxes: "input[type='checkbox']"
+    districts_dropdown: "select:contains('Districts')"
+  
+  schools:
+    links: "a[href*='view=school'], table a, div[role='grid'] a"
+    school_rows: "table tr, div[role='grid'] div[role='row']"
+    
+  school_details:
+    name: "h1, .school-name"
+    address: "td:contains('Street Address') + td"
+    city_state_zip: "td:contains('Street Address') + td"
+    phone: "td:contains('Phone') + td, a[href^='tel:']"
+    website: "a[href*='http']:not([href*='txschools.gov'])"
+    district: "td:contains('District') + td a"
+    grades: "td:contains('Grades Served') + td"
+
+# Browser configuration
+browser:
+  headless: true
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+  window_width: 1920
+  window_height: 1080
+  implicit_wait: 10
+  page_load_timeout: 30
+
+# Rate limiting configuration
+rate_limiting:
+  delay_between_requests: 2.0
+  max_retries: 3
+  backoff_factor: 2.0
+
+# Scraper type (needed for export)
+scraper_type: "tx" 
