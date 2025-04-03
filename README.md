@@ -148,7 +148,8 @@ The application is structured with modularity and reusability in mind:
 
 1. **Scrapers**: Handle website interaction and data extraction
    - `BaseScraper`: Common scraper functionality
-   - `TXSchoolsScraper`: Texas Schools implementation
+   - `TXSchoolsScraper`: Texas Schools implementation 
+   - `AZSchoolsScraper`: Arizona Schools implementation
 
 2. **Data Processors**: Format and export scraped data
    - `BaseProcessor`: Common processor functionality
