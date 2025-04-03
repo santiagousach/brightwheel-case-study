@@ -1,0 +1,63 @@
+base_url: https://azreportcards.azed.gov/schools
+
+# Maximum number of schools to scrape (for testing)
+max_schools: 20
+
+# Output configuration
+output:
+  format: csv
+  path: /app/data/az_schools.csv
+
+# Filters for narrowing down school selection
+filters:
+  grade_levels:
+    - "Kindergarten"
+    - "Grade 1"
+    - "Grade 2"
+    - "Grade 3"
+    - "Grade 4"
+    - "Grade 5"
+
+# Selectors for extracting data
+selectors:
+  search:
+    input: "input[placeholder='Search by school name']"
+    button: "button[aria-label='search']"
+  
+  filters:
+    alphabet_buttons: "button.v-btn.v-btn--icon.v-btn--small.theme--light"
+  
+  schools:
+    links: "a.no-underline"
+    list_container: "div.layout.row.wrap"
+    
+  school_details:
+    # Based on screenshot, we need to capture the real school name from the list page
+    name: [
+      "div.school-header h1",
+      "h1.school-name", 
+      "div.header-container h1", 
+      "a.no-underline"
+    ]
+    # For getting the name from the URL in case of extraction failure
+    url_regex: "/schools/detail/([^/]+)/([^/]+)"
+    district: "span.title, .district-name"
+    grades: "div.text-xs-center p"
+    address: ".contact-info, address"
+    phone: ".contact-info, .phone"
+    website: "a[href*='http']:not([href*='azreportcards.azed.gov'])"
+
+# Browser configuration
+browser:
+  headless: true
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+  window_width: 1920
+  window_height: 1080
+  implicit_wait: 10
+  page_load_timeout: 30
+
+# Rate limiting configuration
+rate_limiting:
+  delay_between_requests: 2.0
+  max_retries: 3
+  backoff_factor: 2.0 

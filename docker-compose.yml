@@ -1,0 +1,38 @@
+services:
+  tx_scraper:
+    build: .
+    container_name: texas_schools_scraper
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - SCRAPER_TYPE=tx_schools
+    command: python -m src.main
+    restart: on-failure
+    networks:
+      - scraper_network
+
+  az_scraper:
+    build: .
+    container_name: arizona_schools_scraper
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - SCRAPER_TYPE=az_schools
+    command: python -m src.main
+    restart: on-failure
+    networks:
+      - scraper_network
+
+networks:
+  scraper_network:
+    driver: bridge 
